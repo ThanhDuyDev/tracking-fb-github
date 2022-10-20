@@ -1,182 +1,121 @@
-
-const cookies = require('./cookies.json');
-const fs = require('fs');
-
-const clickByText = async (page, text) => {
-    const escapedText = escapeXpathString(text);
-    const linkHandlers = await page.$x(`//a[contains(text(), ${escapedText})]`);
-
-    if (linkHandlers.length > 0) {
-        await linkHandlers[0].click();
-    } else {
-        throw new Error(`Link not found: ${text}`);
-    }
-};
+const cookies = require("./currentcookies.json");
+const fs = require("fs");
 
 const scraperObject = {
-    url: 'https://mbasic.facebook.com/groups/377562787016149',
-    async scraper(browser) {
-        const page = await browser.newPage();
-        console.log(`Navigating to ${this.url}...`);
+  url: "https://mbasic.facebook.com/groups/377562787016149",
+  async scraper(browser) {
+    let homePage = await browser.newPage();
+    console.log(`Navigating to ${this.url}...`);
+    // await homePage.goto(this.url); //skip login phase
 
+    if (Object.keys(cookies).length) {
+      await homePage.setCookie(...cookies);
 
+      await homePage.goto(this.url);
+    } else {
+      await homePage.goto(this.url);
 
-        if (Object.keys(cookies).length) {
-            await page.setCookie(...cookies);
+      const likeButton = "article footer div:nth-child(2) a:last-child";
+      await homePage.waitForSelector(likeButton);
+      await homePage.click(likeButton);
+      await homePage.type("#m_login_email", "nguyenhaitan001@yahoo.com.vn");
+      await homePage.type("input[name=pass]", "Tan00245698");
 
-            await page.goto(this.url);
-        } else {
-            await page.goto(this.url);
+      const loginButton = "input[type=submit]";
+      await homePage.waitForSelector(loginButton);
+      await homePage.click(loginButton);
 
-            const likeButton = "article footer div:nth-child(2) a:last-child";
-            await page.waitForSelector(likeButton)
-            await page.click(likeButton)
-            await page.type('#m_login_email', 'dangphuocloc482k@gmail.com');
-            await page.type('input[name=pass]', 'dpl04082000');
+      let currentCookies = await homePage.cookies();
+      fs.writeFileSync("./currentcookies.json", JSON.stringify(currentCookies));
+    }
 
-            const loginButton = "input[type=submit]";
-            await page.waitForSelector(loginButton)
-            await page.click(loginButton)
+    const postDatas = [];
 
-            let currentCookies = await page.cookies();
-            fs.writeFileSync('./cookies.json', JSON.stringify(currentCookies));
+    async function scrapePage() {
+      //querry scrapeLinks
+      let postUrl = await homePage.$$eval(
+        "footer > div:nth-child(2) > a:nth-child(5)",
+        (i) => {
+          return i.map((i) => i.href);
+        }
+      );
+      let scrapePost = async (link) => {
+        let dataObj = {};
+        let postPage = await browser.newPage();
+        await postPage.goto(link);
+        await postPage.waitForTimeout(5000);
+        dataObj["Group"] = await postPage.$eval(
+          "div.bl > header > table > tbody > tr > td.bq.br",
+          (i) => {
+            return i.textContent;
+          }
+        );
+        dataObj["Post url"] = `${link}`;
+        dataObj["Post content"] = await postPage.$eval(
+          "#m_story_permalink_view > div:first-child",
+          (i) => {
+            return i.textContent;
+          }
+        );
+        dataObj["Likes"] = await homePage.$eval(
+          "footer > div:nth-child(2) > span > a",
+          (i) => {
+            return i.getAttribute("aria-label");
+          }
+        );
+
+        try {
+          dataObj["Comments"] = await homePage.$eval(
+            "footer > div:nth-child(2) > a:nth-child(3)",
+            (i) => {
+              return i.textContent;
+            }
+          );
+        } catch {
+          dataObj["Comments"] = "none";
         }
 
-        // let items = document.querySelectorAll("article");
-        // console.log("items", items);
-        // const resultsSelector = 'article';
+        await postPage.close();
+        return dataObj;
+      };
 
-        // const links = await page.evaluate(resultsSelector => {
-        //     return [...document.querySelectorAll(resultsSelector)].map(anchor => {
-        //         const title = anchor.textContent.split('|')[0].trim();
-        //         return `${title} - ${anchor.href}`;
-        //     });
-        // }, resultsSelector);
+      //Loop all post link
+      for (link in postUrl) {
+        let dataCurPage = await scrapePost(postUrl[link]);
+        console.log("dataCurPage", dataCurPage);
+        postDatas.push(dataCurPage);
+      }
 
+      //Enroll more post
+      let nextButtonDisplay = false;
 
-        const seeFullButton = "article footer div:nth-child(2) a:nth-child(7)";
-        await page.waitForSelector(seeFullButton)
-        await page.click(seeFullButton)
+      try {
+        //Check if querryable
+        let nextButton = await homePage.$eval(
+          "#m_group_stories_container > div:last-child",
+          (i) => {
+            return i.textContent;
+          }
+        );
+        nextButtonDisplay = true;
 
-        // -------view post content
-        // const fullPost = await page.evaluate(async () => {
-        //     const content = [];
-        //     let item = document.querySelector(".bj");
-        //     content.push(item.innerText);
-        //     return content;
-        // });
+      } catch (error) {
+        nextButtonDisplay = false;
+      }
 
-        // console.log("full post", fullPost);
-
-        const allLike = ".dl a";
-        await page.waitForSelector(allLike)
-        await page.click(allLike)
-
-        const like = await page.evaluate(async () => {
-            const reactionData = [];
-            let item = document.querySelector(`#root > table > tbody > tr > td > div > div > a:nth-child(3)`)
-            item.click(() => {
-                console.log("");
-
-            }); 
-            // for (var i = 1; i <= 3; i++) {
-            //     let item = document.querySelector(`#root > table > tbody > tr > td > div > div > a:nth-child(${i})`)
-            //     if (item !== null) {
-            //         console.log("new item", item);
-            //         item.click(() => {
-            //             let a = document.querySelector("tr");
-            //             console.log(a);
-            //         });              
-            //     }
-            // }
-            return reactionData;
-        });
-
-        console.log(like);
-
-        // for ( var i=2; i<=9; i++) {
-        //     // console.log(i);
-
-
-        //     // if (like !== false) {
-        //     //     await page.waitForSelector(like)
-        //     //     await page.click(like)
-        //     // }
-        //     console.log(like);
-        // }
-
-
-
-
-
-
-        // console.log(document.querySelector(`#root > table > tbody > tr > td > div > div > a:nth-child(3)`));
-
-
-        // for (var i = 2; i < 9; i++) {
-        //     // const like = `#root > table > tbody > tr > td > div > div > a:nth-child(${i})`;
-        //     console.log(document.querySelector(`#root > table > tbody > tr > td > div > div > a:nth-child(${i})`)   );
-        // }
-
-
-
-        // const emo = await page.evaluate(async () => {
-        //     const emo = [];
-        //     for(let i=1; i<=5; i++) {
-        //         const like = `#root > table > tbody > tr > td > div > div > a:nth-child(${i})`
-        //         await page.waitForSelector(like)
-        //         await page.click(like)
-
-        //         let items = document.querySelectorAll("#root > table > tbody > tr > td > div > ul > li");
-        //         items.forEach((item) => {
-        //             emo.push({
-        //                 icon: i,
-        //                 name: item.innerText
-        //             })
-        //         })
-        //     }
-
-        //     return emo;
-        // })
-
-        // console.log("all emo", emo);
-
-
-
-        // const posts = await page.evaluate(async () => {
-        //     const links = [];
-        //     let items = document.querySelectorAll("article");
-        //     console.log('selector', items);
-        //     // const title = document.querySelector(".bu")
-        //     items.forEach((item) => {
-        //         console.log("item", item);
-        //         links.push({
-        //             title: item.innerText,
-        //             url: item.getAttribute("href")
-        //         });
-        //     });
-
-        //     return links;
-        // });
-        // console.log("post list", posts);
-
-
-        // for (let post of posts) {
-        //     // await page.goto(post.url);
-        //     // let lyric = await page.evaluate(() => {
-        //     //     let lyric = document
-        //     //         .getElementsByClassName("pd_lyric trans")[0]
-        //     //         .innerHTML.replace(/\<br\>/g, "");
-        //     //     return lyric;
-        //     // });
-        //     // console.log(song.title);
-        //     // console.log("..............................");
-        //     // console.log(lyric);
-        // }
-        // posts.forEach(post => {
-        // });
-        // page.click("a[contains(., 'Full Story')]");
+      //scraped test 1page
+      let i = 1;
+      if (nextButtonDisplay && i < 1) {
+        i ++
+        await homePage.click("#m_group_stories_container > div:last-child > a");
+        return await scrapePage(); //Looping scrape every post in current page
+      }
+      await homePage.close();
+      return postDatas;
     }
-}
+    let data = scrapePage();
+    return data;
+  },
+};
 
 module.exports = scraperObject;

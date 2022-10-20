@@ -1,5 +1,5 @@
 {
-  "name": "test-crawl",
+  "name": "scrapperfbgr",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -7,10 +7,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js"
   },
+  "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "fs": "^0.0.1-security",
     "puppeteer": "^19.0.0"
   }
 }
