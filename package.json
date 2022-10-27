@@ -1,16 +1,24 @@
 {
-  "name": "scrapperfbgr",
+  "name": "tracking-fb-github",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThanhDuyDev/tracking-fb-github.git"
+  },
   "author": "",
   "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ThanhDuyDev/tracking-fb-github/issues"
+  },
+  "homepage": "https://github.com/ThanhDuyDev/tracking-fb-github#readme",
   "dependencies": {
-    "puppeteer": "^19.0.0"
+    "mongodb": "^4.11.0",
+    "puppeteer": "^19.1.1"
   }
 }
