@@ -19,6 +19,7 @@
   "homepage": "https://github.com/ThanhDuyDev/tracking-fb-github#readme",
   "dependencies": {
     "mongodb": "^4.11.0",
-    "puppeteer": "^19.1.1"
+    "puppeteer": "^19.1.1",
+    "puppeteer-cluster": "^0.23.0"
   }
 }
