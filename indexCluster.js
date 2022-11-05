@@ -29,17 +29,6 @@ let accounts = JSON.parse(
 
 let i = 0;
 
-// const fbGroup = [
-//   {
-//     groupName: "HỘI SĂN MÃ GIẢM GIÁ - NGHIỀN SHOPEE",
-//     url: "https://mbasic.facebook.com/groups/377562787016149",
-//   },
-//   {
-//     groupName: "test group",
-//     url: "https://mbasic.facebook.com/groups/708702070435993",
-//   },
-// ];
-
 async function open() {
   await createCookies(accounts);
 
@@ -57,6 +46,7 @@ async function open() {
       let counter = 0; //to limit total posts of each cluster, maxCounter = paginating
       let paginating = 100; //maximum size of groupPost (oftens 7 post / paginating)
 
+      console.log("i", i);
       await page.setCookie(...accounts[i].cookie);
       await page.goto(fbGroup.url);
       console.log(`${accounts[i].user} goto ${fbGroup.url}`);
@@ -68,7 +58,7 @@ async function open() {
   });
 
   for (let index in fbGroups) {
-    i === maxWorkers ? 0 : i; // fs.write data of each group to specific browser${i}
+    i === maxWorkers - 1 ? 0 : i; // fs.write data of each group to specific browser${i}
     cluster.queue({ accounts: accounts, fbGroup: fbGroups[index], i });
     i++;
   }

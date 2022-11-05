@@ -80,19 +80,19 @@ export function nextAcc() {
   }
 }
 
-export async function checkBanned(page, account) {
+export async function checkBanned(page, i) {
   try {
-    console.log(`${account.user} checking if banned...`);
+    console.log(`${curAccBrowser[i].user} checking if banned...`);
     let checkStatus = await page.$eval(
       "#objects_container div",
       (value) => value.title
     );
     if (checkStatus === "You’re Temporarily Blocked" || testBanned) {
-      await page.deleteCookie(...account.cookie);
-      account.status = "banned";
-      account.cookie = "";
-      accounts[account.ID] = account;
-      console.log(`${account.user} has been banned`);
+      await page.deleteCookie(...curAccBrowser[i].cookie);
+      curAccBrowser[i].status = "banned";
+      curAccBrowser[i].cookie = "";
+      accounts[curAccBrowser[i].ID] = curAccBrowser[i];
+      console.log(`${curAccBrowser[i].user} has been banned`);
       return true;
     } else {
       console.log("not banned yettt :D");
@@ -130,9 +130,9 @@ export async function clickNext(
   }
 }
 
-export const getComtID = async (totalCommenters, page, account) => {
+export const getComtID = async (totalCommenters, page, i) => {
   console.log(
-    `${account.user} get UserCmts in post... Total:${totalCommenters.length}`
+    `${curAccBrowser[i].user} get UserCmts in post... Total:${totalCommenters.length}`
   );
   try {
     const queryCmts =
@@ -159,17 +159,23 @@ export const getComtID = async (totalCommenters, page, account) => {
     if (moreCmt) {
       await page.waitForSelector('div[id^="see_next"] > a');
       await page.click('div[id^="see_next"] > a');
-      await page.waitForTimeout(randomNum(1500, 2500));
-      return await getComtID(totalCommenters, page, account);
+      await page.waitForTimeout(randomNum(500, 1500));
+      totalCommenters = await getComtID(totalCommenters, page, i);
     }
   } catch (error) {
+    if (await checkBanned(page, i)) {
+      curAccBrowser[i] = nextAcc();
+      await page.setCookie(...curAccBrowser[i].cookie);
+      await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
+      totalCommenters = await getComtID(totalCommenters, page, i);
+    }
     getErr ? console.error("getComtID", error) : "";
     console.log("more Cmt not found");
   }
   return totalCommenters;
 };
 
-export const scrapeReactID = async (curReactData, page, account, i) => {
+export const scrapeReactID = async (curReactData, page, i) => {
   try {
     let curReactPage = await page.$$eval("ul header > h3 > a", (i) =>
       i.map((item) => {
@@ -181,7 +187,7 @@ export const scrapeReactID = async (curReactData, page, account, i) => {
     curReactData = [...curReactData, ...curReactPage];
 
     console.log(
-      `${account.user} Current total reactUser ${curReactData.length}`
+      `${curAccBrowser[i].user} Current total reactUser ${curReactData.length}`
     );
 
     if (test && curReactData.length > 50) {
@@ -205,36 +211,23 @@ export const scrapeReactID = async (curReactData, page, account, i) => {
       await page.waitForSelector("ul li:last-child a");
       await page.click("ul li:last-child a");
       await page.waitForTimeout(randomNum(1000, 1500));
-      curReactData = await scrapeReactID(curReactData, page, account, i);
-      return curReactData;
+      curReactData = await scrapeReactID(curReactData, page, i);
     }
   } catch (error) {
-    if (await checkBanned(page, account)) {
+    if (await checkBanned(page, i)) {
       curAccBrowser[i] = nextAcc();
       await page.setCookie(...curAccBrowser[i].cookie);
       await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
-      curReactData = await scrapeReactID(
-        curReactData,
-        page,
-        curAccBrowser[i],
-        i
-      );
+      curReactData = await scrapeReactID(curReactData, page, i);
     }
     getErr ? console.log("scrapeReactID", error) : "";
     throw error; //=== return error, make parent function execute catch
   }
-  console.log("scrapeReactID", curReactData);
   return curReactData;
 };
 
-export const getReact = async (page, account, i) => {
-  if (await checkBanned(page, account)) {
-    curAccBrowser[i] = nextAcc();
-    await page.setCookie(...curAccBrowser[i].cookie);
-    await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
-  }
-
-  console.log(`${account.user} Getting reactUserID... `);
+export const getReact = async (page, i) => {
+  console.log(`${curAccBrowser[i].user} Getting reactUserID... `);
   let data = [];
   try {
     let queryReact =
@@ -271,12 +264,11 @@ export const getReact = async (page, account, i) => {
         reactData[reactTypes[index].type] = await scrapeReactID(
           curReactData,
           page,
-          account,
           i
         );
 
         console.log(
-          `${account.user} Crawled UserID react ${
+          `${curAccBrowser[i].user} Crawled UserID react ${
             reactTypes[index].type
           } - total ${reactData[reactTypes[index].type].length}`
         );
@@ -287,19 +279,20 @@ export const getReact = async (page, account, i) => {
       }
     }
   } catch (error) {
+    if (await checkBanned(page, i)) {
+      curAccBrowser[i] = nextAcc();
+      await page.setCookie(...curAccBrowser[i].cookie);
+      await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
+      return await getReact(page, i);
+    }
+
     getErr ? console.log("getReact", error) : "";
     throw error; // make parent function execute catch
   }
   return data;
 };
 
-export const scrapePage = async (
-  page,
-  account,
-  paginating,
-  counter,
-  totalPost
-) => {
+export const scrapePage = async (page, paginating, counter, totalPost, i) => {
   try {
     let groupName = await page.$eval("header > table div", (i) => {
       return i.textContent;
@@ -354,7 +347,7 @@ export const scrapePage = async (
     // if (counter < paginating && test === false) {
     //   // i for looptest
     //   counter++;
-    //   console.log(`${account.user} Current groupPage ${counter}...max Paginating${paginating}`);
+    //   console.log(`${curAccBrowser[i]} Current groupPage ${counter}...max Paginating${paginating}`);
     //   await clickNext(
     //     page,
     //     "#m_group_stories_container > div:last-child > a",
@@ -378,12 +371,12 @@ export const scrapePage = async (
     if (nextButtonDisplay && counter < paginating && test === false) {
       counter++;
       console.log(
-        `${account.user} Current groupPage ${counter}...max ${paginating}`
+        `${curAccBrowser[i]} Current groupPage ${counter}...max ${paginating}`
       );
       await page.waitForSelector(querrySelector);
       await page.click(querrySelector);
-      await page.waitForTimeout(randomNum(500, 1000));
-      return await scrapePage(page, account, paginating, counter, totalPost); //Looping scrape in current page
+      await page.waitForTimeout(randomNum(250, 500));
+      return await scrapePage(page, paginating, counter, totalPost, i); //Looping scrape in current page
     }
 
     return totalPost;
@@ -392,27 +385,59 @@ export const scrapePage = async (
   }
 };
 
-export const scrapePost = async (link, page, account, i) => {
-  let resultPostCmt = "none";
-  let resultPostReact = "none";
-  try {
-    let totalPostReact = [];
-    let totalCommenters = [];
+export const scrapePost = async (page, i) => {
+  //Re reading data
+  let scrapedData = JSON.parse(
+    fs.readFileSync(`./browser${i + 1}data/scrapedData.json`, {
+      encoding: "utf8",
+      flag: "r",
+    })
+  );
 
-    console.log(`${account.user} going to post link: ${link}`);
+  while (scrapedData.length) {
+    try {
+      let scrapedDataLength;
+      console.log(`${curAccBrowser[i].user} scraping post...`);
+      test ? (scrapedDataLength = 5) : (scrapedDataLength = scrapedData.length);
+      for (let index = 0; index < scrapedDataLength; index++) {
+        try {
+          if (!scrapedData[index].CmtUser || !scrapedData[index].ReactUser) {
+            let totalPostReact = [];
+            let totalCommenters = [];
 
-    await page.goto(link);
-    await page.waitForTimeout(randomNum(1000, 2500));
+            console.log(
+              `${curAccBrowser[i].user} going to post link: ${
+                scrapedData[index].PostUrl
+              } at ${index + 1}/${scrapedData.length}`
+            );
 
-    totalCommenters = await getComtID(totalCommenters, page, account);
-    totalPostReact = await getReact(page, account, i);
+            await page.goto(scrapedData[index].PostUrl);
+            await page.waitForTimeout(randomNum(1000, 2500));
 
-    resultPostCmt = totalCommenters ? totalCommenters : "none";
-    resultPostReact = totalPostReact ? totalPostReact : "none";
-  } catch (error) {
-    getErr ? console.log("scrapePost", error) : "";
+            if (scrapedData[index].totalCmt !== "none") {
+              totalCommenters = await getComtID(totalCommenters, page, i);
+              scrapedData[index].CmtUser = totalCommenters;
+            } else {
+              scrapedData[index].CmtUser = "none";
+            }
+
+            if (scrapedData[index].totalReact !== "none") {
+              totalPostReact = await getReact(page, i);
+              scrapedData[index].ReactUser = totalPostReact;
+            } else {
+              scrapedData[index].ReactUser = "none";
+            }
+          }
+        } catch (error) {
+          getErr ? console.log("ScrapeGroupPhase2", error) : "";
+          throw error; // === return error to parrent Function to execute catch instead of try
+        }
+      }
+    } catch (error) {
+      getErr ? console.log("ScrapeGroupPhase2", error) : "";
+      break;
+    }
   }
-  return { resultPostCmt, resultPostReact };
 };
 
 export function filterScrapedData(data, i) {
@@ -429,7 +454,7 @@ export function filterScrapedData(data, i) {
     browserData = [...browserData, ...resultData];
 
     fs.writeFileSync(
-      `./browser${i + 1}data/resultData.json`,
+      `./resultData.json`,
       JSON.stringify(browserData)
     );
 
@@ -440,10 +465,18 @@ export function filterScrapedData(data, i) {
       `./browser${i + 1}data/scrapedData.json`,
       JSON.stringify(filteredScrapedData)
     );
+
+    return filteredScrapedData;
   } catch (error) {
     getErr ? console.log("filterScrapedData", error) : "";
   }
 }
+
+export function upsert(array1, obj, key) {
+  const index = array1.findIndex((item) => item[`${key}`] === obj[`${key}`]);
+  index > -1 ? (array1[index] = obj) : array1.push(obj);
+}
+
 //-------------------------main Func-------------------------
 
 export const scrapeGroup = async (
@@ -463,23 +496,26 @@ export const scrapeGroup = async (
   curAccBrowser[i] = startAccount;
 
   //Check if acc Banned
-  if (await checkBanned(page, curAccBrowser[i])) {
+  if (await checkBanned(page, i)) {
     curAccBrowser[i] = nextAcc();
     await page.setCookie(...curAccBrowser[i].cookie);
     await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
   }
 
+  //Scrape until scrapedData.json empty
+  await scrapePost(page, i);
+
+  //Bypass if error occurs
   if (!scrapedData.length) {
     console.log(`${curAccBrowser[i].user} scraping page...`);
     let groupPostData = [];
     groupPostData = await scrapePage(
       page,
-      curAccBrowser[i],
       paginating,
       counter,
-      groupPostData
+      groupPostData,
+      i
     );
-
     fs.writeFileSync(
       `./browser${i + 1}data/scrapedData.json`,
       JSON.stringify(groupPostData)
@@ -491,54 +527,9 @@ export const scrapeGroup = async (
     );
   }
 
-  //Re reading data
-  scrapedData = JSON.parse(
-    fs.readFileSync(`./browser${i + 1}data/scrapedData.json`, {
-      encoding: "utf8",
-      flag: "r",
-    })
-  );
-  let scrapeDataLength;
-  console.log(`${curAccBrowser[i].user} scraping post...`);
+  await scrapePost(page, i);
 
-  test ? (scrapeDataLength = 5) : (scrapeDataLength = scrapedData.length);
-  console.log("scrapeDataLength", scrapeDataLength);
-  for (let index = 0; index < scrapeDataLength; index++) {
-    try {
-      if (!scrapedData[index].CmtUser || !scrapedData[index].ReactUser) {
-        let totalPostReact = [];
-        let totalCommenters = [];
-
-        console.log(
-          `${curAccBrowser[i].user} going to post link: ${scrapedData[index].PostUrl}`
-        );
-
-        await page.goto(scrapedData[index].PostUrl);
-        await page.waitForTimeout(randomNum(1000, 2500));
-
-        if (scrapedData[index].totalCmt !== "none") {
-          totalCommenters = await getComtID(
-            totalCommenters,
-            page,
-            curAccBrowser[i]
-          );
-          scrapedData[index].CmtUser = totalCommenters;
-        } else {
-          scrapedData[index].CmtUser = "none";
-        }
-
-        if (scrapedData[index].totalReact !== "none") {
-          totalPostReact = await getReact(page, curAccBrowser[i], i);
-          scrapedData[index].ReactUser = totalPostReact;
-        } else {
-          scrapedData[index].ReactUser = "none";
-        }
-      }
-    } catch (error) {
-      getErr ? console.log("ScrapeGroupPhase2", error) : "";
-      break;
-    }
-  }
+  //Crawl until no postUrl left from phase1, prevent cluster.task moving to another FbGroupUrl
 
   fs.writeFileSync(
     `./browser${i + 1}data/scrapedData.json`,
@@ -549,6 +540,5 @@ export const scrapeGroup = async (
       i + 1
     }data/scrapedData.json`
   );
-
-  filterScrapedData(scrapedData, i);
+  scrapedData = filterScrapedData(scrapedData, i);
 };
