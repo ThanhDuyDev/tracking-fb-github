@@ -1,3 +1,4 @@
+import { fail } from "assert";
 import fs from "fs";
 import puppeteer from "puppeteer";
 export const maxWorkers = 2;
@@ -14,7 +15,7 @@ let accIndex = maxWorkers - 1;
 let curAccBrowser = Array.from(Array(maxWorkers)).map((_, i) => i + 1);
 // let curAccBrowser2;
 
-let test = false; // short loop, no delay, if react of post > 50 : ban acc and switch to another until nothing left
+let test = true; // short loop, no delay, if react of post > 50 : ban acc and switch to another until nothing left
 let testBanned = false; //test switch acc if banned
 let getErr = true; // console.log error from catch
 
@@ -144,6 +145,9 @@ export const getComtID = async (totalCommenters, page, i) => {
       })
     );
 
+    //On Banned: comments = []
+    if (!comments.length || testBanned) throw "Can't querry selector";
+
     totalCommenters = [...totalCommenters, ...comments];
 
     let moreCmt = false;
@@ -163,14 +167,14 @@ export const getComtID = async (totalCommenters, page, i) => {
       totalCommenters = await getComtID(totalCommenters, page, i);
     }
   } catch (error) {
+    getErr ? console.error("getComtID", error) : "";
+
     if (await checkBanned(page, i)) {
       curAccBrowser[i] = nextAcc();
       await page.setCookie(...curAccBrowser[i].cookie);
       await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
       totalCommenters = await getComtID(totalCommenters, page, i);
     }
-    getErr ? console.error("getComtID", error) : "";
-    console.log("more Cmt not found");
   }
   return totalCommenters;
 };
@@ -183,6 +187,9 @@ export const scrapeReactID = async (curReactData, page, i) => {
         return { Name: item.textContent, Url: shortLink };
       })
     );
+
+    //On Banned: curReactPage = []
+    if (!curReactPage.length || testBanned) throw "Can't querry selector";
 
     curReactData = [...curReactData, ...curReactPage];
 
@@ -371,7 +378,7 @@ export const scrapePage = async (page, paginating, counter, totalPost, i) => {
     if (nextButtonDisplay && counter < paginating && test === false) {
       counter++;
       console.log(
-        `${curAccBrowser[i]} Current groupPage ${counter}...max ${paginating}`
+        `${curAccBrowser[i].user} Current groupPage ${counter}...max ${paginating}`
       );
       await page.waitForSelector(querrySelector);
       await page.click(querrySelector);
@@ -385,15 +392,7 @@ export const scrapePage = async (page, paginating, counter, totalPost, i) => {
   }
 };
 
-export const scrapePost = async (page, i) => {
-  //Re reading data
-  let scrapedData = JSON.parse(
-    fs.readFileSync(`./browser${i + 1}data/scrapedData.json`, {
-      encoding: "utf8",
-      flag: "r",
-    })
-  );
-
+export const scrapePost = async (page, i, scrapedData) => {
   while (scrapedData.length) {
     try {
       let scrapedDataLength;
@@ -401,7 +400,10 @@ export const scrapePost = async (page, i) => {
       test ? (scrapedDataLength = 5) : (scrapedDataLength = scrapedData.length);
       for (let index = 0; index < scrapedDataLength; index++) {
         try {
-          if (!scrapedData[index].CmtUser || !scrapedData[index].ReactUser) {
+          if (
+            !scrapedData[index].CmtUser?.length ||
+            !scrapedData[index].ReactUser?.length
+          ) {
             let totalPostReact = [];
             let totalCommenters = [];
 
@@ -427,6 +429,8 @@ export const scrapePost = async (page, i) => {
             } else {
               scrapedData[index].ReactUser = "none";
             }
+          } else {
+            throw "All post phase2 crawled";
           }
         } catch (error) {
           getErr ? console.log("ScrapeGroupPhase2", error) : "";
@@ -443,20 +447,19 @@ export const scrapePost = async (page, i) => {
 export function filterScrapedData(data, i) {
   try {
     let browserData = JSON.parse(
-      fs.readFileSync(`./browser${i + 1}data/resultData.json`, {
+      fs.readFileSync(`./resultData.json`, {
         encoding: "utf8",
         flag: "r",
       })
     );
 
-    let resultData = data.filter((item) => item.CmtUser && item.ReactUser);
+    let resultData = data.filter(
+      (item) => item.CmtUser?.length && item.ReactUser?.length
+    );
 
     browserData = [...browserData, ...resultData];
 
-    fs.writeFileSync(
-      `./resultData.json`,
-      JSON.stringify(browserData)
-    );
+    fs.writeFileSync(`./resultData.json`, JSON.stringify(browserData));
 
     //rewrite scrapedData - filter resulted
     let filteredScrapedData = data.filter((item) => !resultData.includes(item));
@@ -502,9 +505,6 @@ export const scrapeGroup = async (
     await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
   }
 
-  //Scrape until scrapedData.json empty
-  await scrapePost(page, i);
-
   //Bypass if error occurs
   if (!scrapedData.length) {
     console.log(`${curAccBrowser[i].user} scraping page...`);
@@ -525,11 +525,11 @@ export const scrapeGroup = async (
         i + 1
       }data/scrapedData.json`
     );
+    return (scrapedData = groupPostData);
   }
 
-  await scrapePost(page, i);
-
   //Crawl until no postUrl left from phase1, prevent cluster.task moving to another FbGroupUrl
+  await scrapePost(page, i, scrapedData);
 
   fs.writeFileSync(
     `./browser${i + 1}data/scrapedData.json`,
