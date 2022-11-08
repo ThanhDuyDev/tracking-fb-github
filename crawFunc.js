@@ -13,9 +13,8 @@ let accounts = JSON.parse(
 let accIndex = maxWorkers - 1;
 
 let curAccBrowser = Array.from(Array(maxWorkers)).map((_, i) => i + 1);
-// let curAccBrowser2;
 
-let test = true; // short loop, no delay, if react of post > 50 : ban acc and switch to another until nothing left
+let test = false; // short loop, no delay, if react of post > 20 : ban acc and switch to another until nothing left
 let testBanned = false; //test switch acc if banned
 let getErr = true; // console.log error from catch
 
@@ -96,7 +95,6 @@ export async function checkBanned(page, i) {
       console.log(`${curAccBrowser[i].user} has been banned`);
       return true;
     } else {
-      console.log("not banned yettt :D");
       return false;
     }
   } catch (error) {
@@ -120,14 +118,6 @@ export async function clickNext(
     nextButtonDisplay = true;
   } catch (error) {
     nextButtonDisplay = false;
-  }
-
-  //scraped
-  if (nextButtonDisplay) {
-    await page.waitForSelector(querrySelector);
-    await page.click(querrySelector);
-    await page.waitForTimeout(randomNum(500, 1000));
-    return await loopFunction(page, paginating); //Looping scrape in current page
   }
 }
 
@@ -189,7 +179,11 @@ export const scrapeReactID = async (curReactData, page, i) => {
     );
 
     //On Banned: curReactPage = []
-    if (!curReactPage.length || testBanned) throw "Can't querry selector";
+    if ((!curReactPage.length && (await checkBanned(page, i))) || testBanned) {
+      curAccBrowser[i] = nextAcc();
+      await page.setCookie(...curAccBrowser[i].cookie);
+      await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
+    }
 
     curReactData = [...curReactData, ...curReactPage];
 
@@ -197,7 +191,7 @@ export const scrapeReactID = async (curReactData, page, i) => {
       `${curAccBrowser[i].user} Current total reactUser ${curReactData.length}`
     );
 
-    if (test && curReactData.length > 50) {
+    if (test && curReactData.length > 200) {
       testBanned = true;
       throw "testBann";
     }
@@ -221,13 +215,13 @@ export const scrapeReactID = async (curReactData, page, i) => {
       curReactData = await scrapeReactID(curReactData, page, i);
     }
   } catch (error) {
+    getErr ? console.log("scrapeReactID", error) : "";
     if (await checkBanned(page, i)) {
       curAccBrowser[i] = nextAcc();
       await page.setCookie(...curAccBrowser[i].cookie);
       await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
       curReactData = await scrapeReactID(curReactData, page, i);
     }
-    getErr ? console.log("scrapeReactID", error) : "";
     throw error; //=== return error, make parent function execute catch
   }
   return curReactData;
@@ -378,11 +372,11 @@ export const scrapePage = async (page, paginating, counter, totalPost, i) => {
     if (nextButtonDisplay && counter < paginating && test === false) {
       counter++;
       console.log(
-        `${curAccBrowser[i].user} Current groupPage ${counter}...max ${paginating}`
+        `${groupName} current groupPage ${counter}...max ${paginating}`
       );
       await page.waitForSelector(querrySelector);
       await page.click(querrySelector);
-      await page.waitForTimeout(randomNum(250, 500));
+      // await page.waitForTimeout(randomNum(250, 500));
       return await scrapePage(page, paginating, counter, totalPost, i); //Looping scrape in current page
     }
 
@@ -393,11 +387,19 @@ export const scrapePage = async (page, paginating, counter, totalPost, i) => {
 };
 
 export const scrapePost = async (page, i, scrapedData) => {
+  curAccBrowser[i] = accounts[i];
+  await page.setCookie(...curAccBrowser[i].cookie);
+  //Check if acc Banned
+  if (await checkBanned(page, i)) {
+    curAccBrowser[i] = nextAcc();
+    await page.setCookie(...curAccBrowser[i].cookie);
+    await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
+  }
   while (scrapedData.length) {
     try {
       let scrapedDataLength;
       console.log(`${curAccBrowser[i].user} scraping post...`);
-      test ? (scrapedDataLength = 5) : (scrapedDataLength = scrapedData.length);
+      test ? (scrapedDataLength = 1) : (scrapedDataLength = scrapedData.length);
       for (let index = 0; index < scrapedDataLength; index++) {
         try {
           if (
@@ -416,24 +418,35 @@ export const scrapePost = async (page, i, scrapedData) => {
             await page.goto(scrapedData[index].PostUrl);
             await page.waitForTimeout(randomNum(1000, 2500));
 
-            if (scrapedData[index].totalCmt !== "none") {
-              totalCommenters = await getComtID(totalCommenters, page, i);
-              scrapedData[index].CmtUser = totalCommenters;
-            } else {
-              scrapedData[index].CmtUser = "none";
+            //check if url got banned/deleted
+            let checkPost = await page.$eval(
+              "#objects_container span",
+              (node) => node.textContent.slice(0, 42)
+            );
+            const FbPostErr = "The page you requested cannot be displayed";
+            if (checkPost === FbPostErr || testBanned) {
+              console.log(
+                `${scrapedData[index].PostUrl} has been banned/deleted`
+              );
+              scrapedData.splice(index, 1);
+              await scrapePost(page, i, scrapedData);
             }
 
-            if (scrapedData[index].totalReact !== "none") {
+            if (scrapedData[index].totalCmt === "none") {
+              scrapedData[index].CmtUser = "none";
+            } else if (!scrapedData[index].CmtUser?.length) {
+              totalCommenters = await getComtID(totalCommenters, page, i);
+              scrapedData[index].CmtUser = totalCommenters;
+            }
+
+            if (scrapedData[index].totalReact === "none") {
+              scrapedData[index].ReactUser = "none";
+            } else if (!scrapedData[index].ReactUser?.length) {
               totalPostReact = await getReact(page, i);
               scrapedData[index].ReactUser = totalPostReact;
-            } else {
-              scrapedData[index].ReactUser = "none";
             }
-          } else {
-            throw "All post phase2 crawled";
           }
         } catch (error) {
-          getErr ? console.log("ScrapeGroupPhase2", error) : "";
           throw error; // === return error to parrent Function to execute catch instead of try
         }
       }
@@ -442,6 +455,8 @@ export const scrapePost = async (page, i, scrapedData) => {
       break;
     }
   }
+  //Write Json and to break whileLoop
+  scrapedData = filterScrapedData(scrapedData, i);
 };
 
 export function filterScrapedData(data, i) {
@@ -459,7 +474,9 @@ export function filterScrapedData(data, i) {
 
     browserData = [...browserData, ...resultData];
 
-    fs.writeFileSync(`./resultData.json`, JSON.stringify(browserData));
+    test
+      ? ""
+      : fs.writeFileSync(`./resultData.json`, JSON.stringify(browserData));
 
     //rewrite scrapedData - filter resulted
     let filteredScrapedData = data.filter((item) => !resultData.includes(item));
@@ -468,7 +485,11 @@ export function filterScrapedData(data, i) {
       `./browser${i + 1}data/scrapedData.json`,
       JSON.stringify(filteredScrapedData)
     );
-
+    console.log(
+      `${curAccBrowser[i].user} Phase 2 completed, view at browser${
+        i + 1
+      }data/scrapedData.json`
+    );
     return filteredScrapedData;
   } catch (error) {
     getErr ? console.log("filterScrapedData", error) : "";
@@ -484,7 +505,7 @@ export function upsert(array1, obj, key) {
 
 export const scrapeGroup = async (
   page,
-  startAccount,
+  // startAccount,
   paginating,
   i,
   counter
@@ -496,18 +517,9 @@ export const scrapeGroup = async (
     })
   );
 
-  curAccBrowser[i] = startAccount;
-
-  //Check if acc Banned
-  if (await checkBanned(page, i)) {
-    curAccBrowser[i] = nextAcc();
-    await page.setCookie(...curAccBrowser[i].cookie);
-    await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
-  }
-
-  //Bypass if error occurs
+  //Phase 1 data
   if (!scrapedData.length) {
-    console.log(`${curAccBrowser[i].user} scraping page...`);
+    console.log(`Scraping page...`);
     let groupPostData = [];
     groupPostData = await scrapePage(
       page,
@@ -521,24 +533,12 @@ export const scrapeGroup = async (
       JSON.stringify(groupPostData)
     );
     console.log(
-      `${curAccBrowser[i].user} Phase 1 completed, view at browser${
-        i + 1
-      }data/scrapedData.json`
+      `Phase 1 completed, view at browser${i + 1}data/scrapedData.json`
     );
-    return (scrapedData = groupPostData);
+
+    scrapedData = groupPostData;
   }
 
   //Crawl until no postUrl left from phase1, prevent cluster.task moving to another FbGroupUrl
   await scrapePost(page, i, scrapedData);
-
-  fs.writeFileSync(
-    `./browser${i + 1}data/scrapedData.json`,
-    JSON.stringify(scrapedData)
-  );
-  console.log(
-    `${curAccBrowser[i].user} Phase 2 completed, view at browser${
-      i + 1
-    }data/scrapedData.json`
-  );
-  scrapedData = filterScrapedData(scrapedData, i);
 };

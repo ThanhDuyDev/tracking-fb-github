@@ -46,12 +46,11 @@ async function open() {
       let counter = 0; //to limit total posts of each cluster, maxCounter = paginating
       let paginating = 100; //maximum size of groupPost (oftens 7 post / paginating)
 
-      console.log("i", i);
-      await page.setCookie(...accounts[i].cookie);
       await page.goto(fbGroup.url);
-      console.log(`${accounts[i].user} goto ${fbGroup.url}`);
+      console.log(`Browser${i + 1} crawling ${fbGroup.url}`);
 
-      await scrapeGroup(page, accounts[i], paginating, i, counter);
+      // await scrapeGroup(page, accounts[i], paginating, i, counter);
+      await scrapeGroup(page, paginating, i, counter);
     } catch (error) {
       console.log("TaskErr", error);
     }

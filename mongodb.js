@@ -1,42 +1,41 @@
 import { MongoClient } from "mongodb";
-import  puppeteer  from "puppeteer";
+import puppeteer from "puppeteer";
 import fs from "fs";
-import {scrapePost} from "./crawFunc.js"
-import data from "./data.json" assert { type: "json" };
+import { scrapePost } from "./crawFunc.js";
 
-const uri =
-  "mongodb+srv://haitan:Tan001@cluster0.ke7bgle.mongodb.net/?retryWrites=true&w=majority";
+let crawledData = JSON.parse(
+  fs.readFileSync(`./resultData.json`, {
+    encoding: "utf8",
+    flag: "r",
+  })
+);
 
-const client = new MongoClient(uri);
-//Recheck if data not crawled all...
-(async () => {
-  const browser = await puppeteer.launch();
-  const page = await browser.newPage();
-	let scrapedData = JSON.parse(
-	  fs.readFileSync(`./reusultData.json`, {
-	    encoding: "utf8",
-	    flag: "r",
-	  })
-	);
+const url =
+  "mongodb+srv://Nereb:nJ8F9BUXwBrGMld9@cluster0.euanrwr.mongodb.net/?retryWrites=true&w=majority";
+const dbName = "FirstProjectWithCLI";
+const client = new MongoClient(url);
 
-	await scrapePost(page, i, scrapedData);
-
-	fs.writeFileSync(
-	  `./reusultData.json`,
-	  JSON.stringify(scrapedData)
-	)()
-
-})
-
-export async function pushDatabase() {
+export async function update(data, curCollection) {
   try {
-    const dataBaseName = client.db("test");
-    const scrapeData = dataBaseName.collection("Fb");
+    await client.connect();
+    console.log("Connected correctly to server");
+    const db = client.db(dbName);
 
-    await scrapeData.insertMany(data, { ordered: false });
+    // Use the collection "FbCrawledGroup"
+    const col = db.collection(curCollection);
+
+    // Update or Insert data
+    const bulk = col.initializeUnorderedBulkOp();
+    data.forEach(element => {
+      bulk.find({ PostUrl: element.PostUrl }).upsert().replaceOne(element);
+    });
+
+
+  } catch (err) {
+    console.log(err.stack);
   } finally {
     await client.close();
   }
 }
-
-// pushDatabase().catch(err => console.error());
+// console.log(crawledData[0].PostUrl);
+update(crawledData, "FbCrawledGroup").catch(console.dir);
